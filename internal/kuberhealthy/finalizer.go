@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	khapi "github.com/kuberhealthy/kuberhealthy/v3/pkg/api"
+	client "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const khCheckFinalizer = "kuberhealthy.io/healthcheck"
@@ -25,10 +26,13 @@ func (k *Kuberhealthy) addFinalizer(ctx context.Context, check *khapi.HealthChec
 	if k.hasFinalizer(check) {
 		return nil
 	}
-	// append the kuberhealthy healthcheck finalizer so we control resource cleanup
+	// Use a merge patch so only metadata.finalizers is sent to the API server.
+	// A full-object Update would reserialize the typed struct and rewrite
+	// fields the operator does not intend to touch (e.g. *metav1.Duration
+	// values like "5m" become "5m0s", and bool false with omitempty is dropped).
+	base := client.MergeFrom(check.DeepCopy())
 	check.Finalizers = append(check.Finalizers, khCheckFinalizer)
-	err := k.CheckClient.Update(ctx, check)
-	if err != nil {
+	if err := k.CheckClient.Patch(ctx, check, base); err != nil {
 		return fmt.Errorf("failed to add finalizer: %w", err)
 	}
 	return nil
@@ -46,10 +50,11 @@ func (k *Kuberhealthy) deleteFinalizer(ctx context.Context, check *khapi.HealthC
 			finalizers = append(finalizers, f)
 		}
 	}
+	// Use a merge patch so only metadata.finalizers is sent to the API server.
+	// See addFinalizer for why a full-object Update is unsafe here.
+	base := client.MergeFrom(check.DeepCopy())
 	check.Finalizers = finalizers
-	// persist the updated finalizers back to the API server
-	err := k.CheckClient.Update(ctx, check)
-	if err != nil {
+	if err := k.CheckClient.Patch(ctx, check, base); err != nil {
 		return fmt.Errorf("failed to remove finalizer: %w", err)
 	}
 	return nil

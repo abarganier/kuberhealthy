@@ -165,12 +165,6 @@ func GetCheck(ctx context.Context, cl client.Client, nn types.NamespacedName) (*
 	if err != nil {
 		return nil, err
 	}
-	if out.EnsureCreationTimestamp() {
-		err = cl.Update(ctx, out)
-		if err != nil {
-			return nil, err
-		}
-	}
 	return out, nil
 }
 
